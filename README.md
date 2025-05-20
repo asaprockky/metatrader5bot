@@ -108,5 +108,3 @@ Feel free to fork this repository, submit issues, or send pull requests to enhan
 - The README assumes the timezone adjustment for +05 local time is implemented as suggested in the previous response. If not yet applied, update the trading hours logic in the code.
 - Replace `yourusername`, `your_telegram_token`, and the license placeholder with your details.
 - The current time (07:46 PM +05) is used to provide a real-time context for the bot's operation.
-
-Let me know if you'd like to refine any section!
