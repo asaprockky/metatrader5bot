@@ -329,6 +329,8 @@ def start_edit_trading_param(call):
         "trade_mode": "📊 Enter new trade mode (both, buy_only, or sell_only):"
     }
     
+
+    
     # Check if the parameter is valid to prevent KeyError
     if param not in prompt:
         bot.send_message(call.message.chat.id, "Invalid parameter")
