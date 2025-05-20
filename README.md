@@ -70,9 +70,9 @@ pip install MetaTrader5 filelock
 4. **Update Login Credentials**:
    - Replace `account`, `password`, and `server` in the script with your MT5 login details:
      ```python
-     account = 108582399
-     password = "Faizy@2014$"
-     server = "Exness-MT5Real6"
+     account = your_id
+     password = "password"
+     server = "yourserver"
      ```
 
 5. **Run the Bot**:
@@ -101,9 +101,6 @@ pip install MetaTrader5 filelock
 
 ## Contributing
 Feel free to fork this repository, submit issues, or send pull requests to enhance functionality (e.g., add more timeframes, symbols, or error handling).
-
-## License
-[Specify your license here, e.g., MIT] - Add a license file if applicable.
 
 ---
 
