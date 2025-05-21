@@ -2,13 +2,20 @@ import telebot
 import json
 from telebot import types
 import re
+from datetime import datetime
 
 # Initialize bot
-config = json.load(open('config.json'))
+with open('config.json', 'r') as f:
+    config = json.load(f)
 bot = telebot.TeleBot(config["telegram"]["token"])
 
 # Session states
 user_states = {}
+
+# Custom function to escape Markdown characters
+def escape_markdown(text):
+    escape_chars = '_*[]()~`>#+-=|{}.!'
+    return ''.join(['\\' + char if char in escape_chars else char for char in text])
 
 # Decorators
 def authorized(fn):
@@ -24,7 +31,12 @@ def create_keyboard(items, columns=2):
         keyboard.row(*items[i:i+columns])
     return keyboard
 
-# Main menu with new Trading Settings option
+# Helper function for file operations (no locking for Windows)
+def update_config(new_config):
+    with open('config.json', 'w') as f:
+        json.dump(new_config, f, indent=2)
+
+# Main menu
 main_menu = create_keyboard(["📊 Status", "⚙ Settings", "📈 Symbols", "🔧 Trading Settings", "🆘 Help"])
 
 @bot.message_handler(commands=["start", "help"])
@@ -43,8 +55,8 @@ def send_welcome(message):
     Use the buttons below to navigate!
     """
     bot.send_message(message.chat.id, welcome_msg, 
-                    parse_mode="Markdown", 
-                    reply_markup=main_menu)
+                     parse_mode="Markdown", 
+                     reply_markup=main_menu)
 
 @bot.message_handler(func=lambda msg: msg.text == "📊 Status")
 @authorized
@@ -56,29 +68,30 @@ def show_status(message):
 *General:*
 🤖 Bot: {'✅ Enabled' if config['telegram']['bot_enabled'] else '❌ Disabled'}
 🔁 Counter Trade: {'✅ On' if trading['counter_trade_enabled'] else '❌ Off'}
-⏱ Timeframe: {trading['timeframe']}
-🕯 Min Candle Size: {trading['min_candle_size_points']} points
-📏 M: {trading['M']}
-🕒 Trading Hours: {trading['start_time']} - {trading['end_time']}
-📊 Trade Mode: {trading['trade_mode']}
+⏱ Timeframe: {escape_markdown(str(trading['timeframe']))}
+🕯 Min Candle Size: {escape_markdown(str(trading['min_candle_size_points']))} points
+📏 M: {escape_markdown(str(trading['M']))}
+🕒 Trading Hours: {escape_markdown(str(trading['start_time']))} - {escape_markdown(str(trading['end_time']))}
+📊 Trade Mode: {escape_markdown(str(trading['trade_mode']))}
 
 *Symbols ({len(trading['symbols'])}):*
 """
     for sym in trading["symbols"]:
         s = trading["settings"][sym]
         status_msg += f"""
-🔸 *{sym}*
-- Volume: {s['volume']}
-- TP/SL: {s['tp']}/{s['sl']}
-- Counter: {s['counter']}
-- TP Counter: {s['tp_counter']}
-- SL Counter: {s['sl_counter']}
+🔸 *{escape_markdown(sym)}*
+- Volume: {escape_markdown(str(s['volume']))}
+- TP/SL: {escape_markdown(str(s['tp']))}/{escape_markdown(str(s['sl']))}
+- Counter: {escape_markdown(str(s['counter']))}
+- TP Counter: {escape_markdown(str(s['tp_counter']))}
+- SL Counter: {escape_markdown(str(s['sl_counter']))}
 """
     bot.send_message(message.chat.id, status_msg, parse_mode="Markdown")
 
 @bot.message_handler(func=lambda msg: msg.text == "⚙ Settings")
 @authorized
 def settings_menu(message):
+    config = json.load(open('config.json'))
     keyboard = types.InlineKeyboardMarkup()
     keyboard.add(
         types.InlineKeyboardButton(
@@ -91,8 +104,8 @@ def settings_menu(message):
         )
     )
     bot.send_message(message.chat.id, "⚙ *Bot Settings*", 
-                    parse_mode="Markdown", 
-                    reply_markup=keyboard)
+                     parse_mode="Markdown", 
+                     reply_markup=keyboard)
 
 @bot.message_handler(func=lambda msg: msg.text == "📈 Symbols")
 @authorized
@@ -101,8 +114,8 @@ def symbols_menu(message):
     keyboard.add("➕ Add Symbol", "✏ Edit Symbol")
     keyboard.add("🗑 Remove Symbol", "🏠 Main Menu")
     bot.send_message(message.chat.id, "📈 *Symbol Management*", 
-                    parse_mode="Markdown", 
-                    reply_markup=keyboard)
+                     parse_mode="Markdown", 
+                     reply_markup=keyboard)
 
 # Add symbol flow
 @bot.message_handler(func=lambda msg: msg.text == "➕ Add Symbol")
@@ -112,8 +125,9 @@ def start_add_symbol(message):
     bot.register_next_step_handler(msg, process_symbol_name)
 
 def process_symbol_name(message):
-    if not message.text.isalpha():
-        bot.send_message(message.chat.id, "❌ Invalid symbol! Use only letters (e.g., EURUSD)")
+    if not re.match(r'^[A-Z0-9]+$', message.text.upper()):
+        bot.send_message(message.chat.id, "❌ Invalid symbol! Use uppercase letters and numbers (e.g., EURUSD)")
+        bot.register_next_step_handler(message, process_symbol_name)  # Retry
         return
     user_states[message.chat.id] = {"action": "add", "symbol": message.text.upper()}
     msg = bot.send_message(message.chat.id, "💹 Enter trade volume:")
@@ -122,70 +136,75 @@ def process_symbol_name(message):
 def process_symbol_volume(message):
     try:
         volume = float(message.text)
+        if volume <= 0:
+            raise ValueError("Volume must be positive")
         user_states[message.chat.id]["volume"] = volume
         msg = bot.send_message(message.chat.id, "🎯 Enter Take Profit:")
         bot.register_next_step_handler(msg, process_symbol_tp)
-    except:
-        bot.send_message(message.chat.id, "❌ Invalid number! Please enter a valid volume:")
+    except ValueError as e:
+        bot.send_message(message.chat.id, f"❌ Invalid volume: {str(e)}. Please enter a valid number:")
+        bot.register_next_step_handler(message, process_symbol_volume)  # Retry
 
 def process_symbol_tp(message):
     try:
         tp = float(message.text)
+        if tp <= 0:
+            raise ValueError("Take Profit must be positive")
         user_states[message.chat.id]["tp"] = tp
         msg = bot.send_message(message.chat.id, "🛑 Enter Stop Loss:")
         bot.register_next_step_handler(msg, process_symbol_sl)
-    except:
-        bot.send_message(message.chat.id, "❌ Invalid number! Please enter valid TP:")
+    except ValueError as e:
+        bot.send_message(message.chat.id, f"❌ Invalid Take Profit: {str(e)}. Please enter a valid number:")
+        bot.register_next_step_handler(message, process_symbol_tp)  # Retry
 
 def process_symbol_sl(message):
     try:
         sl = float(message.text)
-        user_states[message.chat.id]["sl"] = sl
+        if sl <= 0:
+            raise ValueError("Stop Loss must be positive")
+        state = user_states[message.chat.id]
+        symbol = state["symbol"]
         config = json.load(open('config.json'))
-        sym = user_states[message.chat.id]["symbol"]
-        
-        config["trading"]["symbols"].append(sym)
-        config["trading"]["settings"][sym] = {
-            "volume": user_states[message.chat.id]["volume"],
-            "tp": user_states[message.chat.id]["tp"],
+        if symbol in config["trading"]["symbols"]:
+            bot.send_message(message.chat.id, "❌ Symbol already exists!", reply_markup=main_menu)
+            return
+        config["trading"]["symbols"].append(symbol)
+        config["trading"]["settings"][symbol] = {
+            "volume": state["volume"],
+            "tp": state["tp"],
             "sl": sl,
             "counter": 5.0,
             "tp_counter": 0.01,
             "sl_counter": 600.0
         }
-        
-        json.dump(config, open('config.json', 'w'), indent=2)
-        bot.send_message(message.chat.id, "Done", reply_markup=main_menu)
-    except Exception as e:
-        bot.send_message(message.chat.id, f"❌ Error: {str(e)}")
+        update_config(config)
+        bot.send_message(message.chat.id, "✅ Symbol added successfully", reply_markup=main_menu)
+    except ValueError as e:
+        bot.send_message(message.chat.id, f"❌ Invalid Stop Loss: {str(e)}. Please enter a valid number:")
+        bot.register_next_step_handler(message, process_symbol_sl)  # Retry
 
 @bot.message_handler(func=lambda msg: msg.text == "🗑 Remove Symbol")
 @authorized
 def start_remove_symbol(message):
-    with open('config.json', 'r') as f:
-        config = json.load(f)
+    config = json.load(open('config.json'))
     if not config["trading"]["symbols"]:
         bot.send_message(message.chat.id, "ℹ No symbols to remove", reply_markup=main_menu)
         return
-    
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
     for sym in config["trading"]["symbols"]:
         keyboard.add(sym)
     keyboard.add("🏠 Main Menu")
-    
     msg = bot.send_message(message.chat.id, "🗑 Select symbol to remove:", reply_markup=keyboard)
     bot.register_next_step_handler(msg, process_remove_symbol)
 
 def process_remove_symbol(message):
-    with open('config.json', 'r') as f:
-        config = json.load(f)
+    config = json.load(open('config.json'))
     if message.text == "🏠 Main Menu":
         send_welcome(message)
         return
     if message.text not in config["trading"]["symbols"]:
         bot.send_message(message.chat.id, "❌ Symbol not found!", reply_markup=main_menu)
         return
-    
     symbol = message.text
     keyboard = types.InlineKeyboardMarkup()
     keyboard.add(
@@ -196,8 +215,7 @@ def process_remove_symbol(message):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("remove_") or call.data == "cancel_remove")
 def handle_remove_confirmation(call):
-    with open('config.json', 'r') as f:
-        config = json.load(f)
+    config = json.load(open('config.json'))
     if call.data == "cancel_remove":
         bot.answer_callback_query(call.id, "Cancelled")
         bot.edit_message_text("Removal cancelled", call.message.chat.id, call.message.message_id, reply_markup=None)
@@ -207,56 +225,52 @@ def handle_remove_confirmation(call):
         if symbol in config["trading"]["symbols"]:
             config["trading"]["symbols"].remove(symbol)
             del config["trading"]["settings"][symbol]
-            with open('config.json', 'w') as f:
-                json.dump(config, f, indent=2)
+            update_config(config)
             bot.answer_callback_query(call.id, f"{symbol} removed")
             bot.edit_message_text(f"{symbol} has been removed", call.message.chat.id, call.message.message_id, reply_markup=None)
             bot.send_message(call.message.chat.id, "Done", reply_markup=main_menu)
         else:
             bot.answer_callback_query(call.id, "Symbol not found")
 
-# Edit symbol flow
 @bot.message_handler(func=lambda msg: msg.text == "✏ Edit Symbol")
 @authorized
 def start_edit_symbol(message):
     config = json.load(open('config.json'))
     if not config["trading"]["symbols"]:
-        bot.send_message(message.chat.id, "ℹ No symbols available to edit")
+        bot.send_message(message.chat.id, "ℹ No symbols available to edit", reply_markup=main_menu)
         return
-    
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
     for sym in config["trading"]["symbols"]:
         keyboard.add(sym)
     keyboard.add("🏠 Main Menu")
-    
-    msg = bot.send_message(message.chat.id, "📝 Select symbol to edit:", 
-                         reply_markup=keyboard)
+    msg = bot.send_message(message.chat.id, "📝 Select symbol to edit:", reply_markup=keyboard)
     bot.register_next_step_handler(msg, process_edit_symbol)
 
 def process_edit_symbol(message):
     config = json.load(open('config.json'))
-    if message.text not in config["trading"]["symbols"]:
-        bot.send_message(message.chat.id, "❌ Symbol not found!")
+    if message.text == "🏠 Main Menu":
+        send_welcome(message)
         return
-    
+    if message.text not in config["trading"]["symbols"]:
+        bot.send_message(message.chat.id, "❌ Symbol not found!", reply_markup=main_menu)
+        return
     user_states[message.chat.id] = {"action": "edit", "symbol": message.text}
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add("Volume", "Take Profit", "Stop Loss")
     keyboard.add("Counter", "TP Counter", "SL Counter")
     keyboard.add("🏠 Main Menu")
-    
-    msg = bot.send_message(message.chat.id, f"✏ Editing {message.text}\nSelect parameter:",
-                         reply_markup=keyboard)
+    msg = bot.send_message(message.chat.id, f"✏ Editing {message.text}\nSelect parameter:", reply_markup=keyboard)
     bot.register_next_step_handler(msg, process_edit_parameter)
 
 def process_edit_parameter(message):
     valid_params = ["volume", "take profit", "stop loss", "counter", "tp counter", "sl counter"]
     param = message.text.lower()
-    
-    if param not in valid_params:
-        bot.send_message(message.chat.id, "❌ Invalid parameter!")
+    if message.text == "🏠 Main Menu":
+        send_welcome(message)
         return
-    
+    if param not in valid_params:
+        bot.send_message(message.chat.id, "❌ Invalid parameter!", reply_markup=main_menu)
+        return
     param_map = {
         "volume": "volume",
         "take profit": "tp",
@@ -265,26 +279,24 @@ def process_edit_parameter(message):
         "tp counter": "tp_counter",
         "sl counter": "sl_counter"
     }
-    
     user_states[message.chat.id]["param"] = param_map[param]
-    msg = bot.send_message(message.chat.id, f"🆕 Enter new value for {message.text}:",
-                         reply_markup=types.ReplyKeyboardRemove())
+    msg = bot.send_message(message.chat.id, f"🆕 Enter new value for {message.text}:", reply_markup=types.ReplyKeyboardRemove())
     bot.register_next_step_handler(msg, save_parameter_change)
 
 def save_parameter_change(message):
     try:
-        config = json.load(open('config.json'))
-        state = user_states[message.chat.id]
         value = float(message.text)
-        
+        if value <= 0:
+            raise ValueError("Value must be positive")
+        state = user_states[message.chat.id]
+        config = json.load(open('config.json'))
         config["trading"]["settings"][state["symbol"]][state["param"]] = value
-        json.dump(config, open('config.json', 'w'), indent=2)
-        
-        bot.send_message(message.chat.id, "Done", reply_markup=main_menu)
-    except Exception as e:
-        bot.send_message(message.chat.id, f"❌ Error: {str(e)}")
+        update_config(config)
+        bot.send_message(message.chat.id, "✅ Parameter updated successfully", reply_markup=main_menu)
+    except ValueError as e:
+        bot.send_message(message.chat.id, f"❌ Invalid value: {str(e)}. Please enter a valid number:")
+        bot.register_next_step_handler(message, save_parameter_change)  # Retry
 
-# New Trading Settings handlers
 @bot.message_handler(func=lambda msg: msg.text == "🔧 Trading Settings")
 @authorized
 def trading_settings_menu(message):
@@ -292,12 +304,12 @@ def trading_settings_menu(message):
     trading = config["trading"]
     settings_msg = f"""🔧 *Trading Settings*
 
-⏱ Timeframe: {trading['timeframe']}
-🕯 Min Candle Size: {trading['min_candle_size_points']} points
-📏 M: {trading['M']}
-🕒 Start Time: {trading['start_time']}
-🕒 End Time: {trading['end_time']}
-📊 Trade Mode: {trading['trade_mode']}
+⏱ Timeframe: {escape_markdown(str(trading['timeframe']))}
+🕯 Min Candle Size: {escape_markdown(str(trading['min_candle_size_points']))} points
+📏 M: {escape_markdown(str(trading['M']))}
+🕒 Start Time: {escape_markdown(str(trading['start_time']))}
+🕒 End Time: {escape_markdown(str(trading['end_time']))}
+📊 Trade Mode: {escape_markdown(str(trading['trade_mode']))}
 """
     keyboard = types.InlineKeyboardMarkup()
     keyboard.add(
@@ -316,10 +328,7 @@ def trading_settings_menu(message):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("edit_trading_param_"))
 def start_edit_trading_param(call):
-    # Extract the full parameter name by removing the prefix
     param = call.data.replace("edit_trading_param_", "", 1)
-    
-    # Define the prompt dictionary
     prompt = {
         "timeframe": "⏱ Enter new timeframe (e.g., M1, M5, H1):",
         "min_candle_size_points": "🕯 Enter new min candle size (positive integer):",
@@ -328,15 +337,9 @@ def start_edit_trading_param(call):
         "end_time": "🕒 Enter new end time (HH:MM):",
         "trade_mode": "📊 Enter new trade mode (both, buy_only, or sell_only):"
     }
-    
-
-    
-    # Check if the parameter is valid to prevent KeyError
     if param not in prompt:
         bot.send_message(call.message.chat.id, "Invalid parameter")
         return
-    
-    # Proceed with sending the prompt
     bot.answer_callback_query(call.id)
     msg = bot.send_message(call.message.chat.id, prompt[param])
     user_states[call.message.chat.id] = {"action": "edit_trading_param", "param": param}
@@ -348,11 +351,12 @@ def process_new_trading_param(message):
         return
     param = state["param"]
     new_value = message.text
-    
     try:
         if param == "timeframe":
-            if not re.match(r'^[A-Z]\d+$', new_value):
-                raise ValueError("Invalid timeframe format! Use e.g., M1, M5, H1")
+            valid = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4']
+            new_value = new_value.upper()
+            if new_value not in valid:
+                raise ValueError(f"Invalid timeframe! Valid options: {', '.join(valid)}")
         elif param == "min_candle_size_points":
             new_value = int(new_value)
             if new_value <= 0:
@@ -362,34 +366,52 @@ def process_new_trading_param(message):
             if new_value <= 0:
                 raise ValueError("Must be a positive float")
         elif param in ["start_time", "end_time"]:
-            if not re.match(r'^\d{2}:\d{2}$', new_value):
-                raise ValueError("Invalid time format! Use HH:MM")
+            time_obj = datetime.strptime(new_value, "%H:%M")
+            new_value = time_obj.strftime("%H:%M")
+            # Validate start_time < end_time
+            config = json.load(open('config.json'))
+            if param == "start_time":
+                end_time = datetime.strptime(config["trading"]["end_time"], "%H:%M")
+                start_time = time_obj
+                if start_time >= end_time:
+                    raise ValueError("Start time must be before end time")
+            elif param == "end_time":
+                start_time = datetime.strptime(config["trading"]["start_time"], "%H:%M")
+                end_time = time_obj
+                if end_time <= start_time:
+                    raise ValueError("End time must be after start time")
         elif param == "trade_mode":
             if new_value not in ["both", "buy_only", "sell_only"]:
                 raise ValueError("Must be 'both', 'buy_only', or 'sell_only'")
-        
         config = json.load(open('config.json'))
         config["trading"][param] = new_value
-        json.dump(config, open('config.json', 'w'), indent=2)
+        update_config(config)
         bot.send_message(message.chat.id, "✅ Updated successfully", reply_markup=main_menu)
         del user_states[message.chat.id]
     except ValueError as e:
         bot.send_message(message.chat.id, f"❌ {str(e)}")
+        bot.register_next_step_handler(message, process_new_trading_param)  # Retry
     except Exception as e:
-        bot.send_message(message.chat.id, f"❌ Error: {str(e)}")
+        bot.send_message(message.chat.id, f"❌ Error: {str(e)}", reply_markup=main_menu)
 
-# Existing callback handlers
 @bot.callback_query_handler(func=lambda call: call.data in ["toggle_bot", "toggle_counter"])
 def handle_callbacks(call):
     config = json.load(open('config.json'))
     if call.data == "toggle_bot":
         config["telegram"]["bot_enabled"] = not config["telegram"]["bot_enabled"]
-        json.dump(config, open('config.json', 'w'), indent=2)
+        update_config(config)
         bot.answer_callback_query(call.id, f"Bot {'enabled' if config['telegram']['bot_enabled'] else 'disabled'}")
+        bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=call.message.reply_markup)
     elif call.data == "toggle_counter":
         config["trading"]["counter_trade_enabled"] = not config["trading"]["counter_trade_enabled"]
-        json.dump(config, open('config.json', 'w'), indent=2)
+        update_config(config)
         bot.answer_callback_query(call.id, f"Counter trade {'enabled' if config['trading']['counter_trade_enabled'] else 'disabled'}")
+        bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=call.message.reply_markup)
+
+@bot.message_handler(func=lambda msg: True)
+@authorized
+def handle_unknown(message):
+    bot.send_message(message.chat.id, "❓ Unrecognized command. Please use the menu:", reply_markup=main_menu)
 
 print("✅ Bot is running...")
 bot.polling()
