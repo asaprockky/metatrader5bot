@@ -8,12 +8,12 @@ from filelock import FileLock
 # Function to read configuration with file locking
 def read_config():
     print("Attempting to read config.json")
-    lock = FileLock("config.json.lock")
+    lock = FileLock("configdemo.json.lock")
     try:
         with lock:
             with open('configdemo.json', 'r') as f:
                 config = json.load(f)
-                print("Successfully read config.json")
+                print("Successfully read configdemo.json")
                 return config
     except (FileNotFoundError, json.JSONDecodeError) as e:
         print(f"Error reading config: {e}")
@@ -131,7 +131,7 @@ def check_mt5_connection():
     print("Checking MT5 connection")
     if not mt5.terminal_info():
         print("MT5 connection lost, attempting to reconnect...")
-        if not mt5.initialize(path=terminal_path):
+        if not mt5.initialize():
             print("Failed to reconnect to MT5")
             return False
         if not mt5.login(account, password, server):
@@ -146,16 +146,14 @@ def check_mt5_connection():
 # Main trading loop
 if __name__ == "__main__":
     # Initialize MT5 with the terminal path
-    terminal_path = r"C:\\Users\\Administrator\\Desktop\\candle\\MetaTrader 5 EXNESS - demo\\terminal64.exe"
-    print(f"Initializing MT5 with terminal path: {terminal_path}")
-    if not mt5.initialize(path=terminal_path):
+    if not mt5.initialize():
         print("Failed to initialize MT5")
         quit()
 
     # Login to MT5 account
-    account = 271019083
-    password = "Thoufy@1985$"
-    server = "Exness-MT5Trial14"
+    account = 247290403
+    password = "14042005Fayz."
+    server = "Exness-MT5Trial"
     print(f"Logging into MT5: account={account}, server={server}")
     if not mt5.login(account, password, server):
         print("Failed to login to MT5")
@@ -166,20 +164,34 @@ if __name__ == "__main__":
 
     # Initialize magic counter
     print("Initializing magic counter")
+    config = read_config()
+    if config is None:
+        print("Configuration file is missing or invalid. Please check configdemo.json.")
     positions = mt5.positions_get() or []
     orders = mt5.orders_get() or []
     print(f"Found {len(positions)} open positions and {len(orders)} pending orders")
     all_magic = [pos.magic for pos in positions] + [order.magic for order in orders]
     magic_counter = max(all_magic) + 1 if all_magic else 100000
     print(f"Magic counter set to: {magic_counter}")
+    start_str = config["trading"]["start_time"]
+    end_str = config["trading"]["end_time"]
+    TRADING_START_TIME = datetime.strptime(start_str, "%H:%M").time()
+    TRADING_END_TIME = datetime.strptime(end_str, "%H:%M").time()
 
     while True:
+        current_utc_time = datetime.now().time()
+        print(current_utc_time)
+        if not (TRADING_START_TIME <= current_utc_time <= TRADING_END_TIME):
+            print(f"Outside of trading hours: {current_utc_time}. Waiting 60 seconds.")
+            time.sleep(60)
+            continue
         # Check MT5 connection
         print("Starting new iteration of main loop")
         if not check_mt5_connection():
             print("MT5 connection check failed, retrying in 60 seconds")
             time.sleep(60)
             continue
+        
 
         # Wait for the next 15-minute interval, checking pending orders periodically
         next_run_time = get_next_run_time()
@@ -205,7 +217,7 @@ if __name__ == "__main__":
         # Load and display configuration
         config = read_config()
         if config is None:
-            print("Configuration file is missing or invalid. Please check config.json.")
+            print("Configuration file is missing or invalid. Please check configdemo.json.")
             continue
 
         if not config["telegram"].get("bot_enabled", True):
@@ -217,6 +229,7 @@ if __name__ == "__main__":
         symbols = config["trading"]["symbols"]
         min_candle_size_points = config["trading"]["min_candle_size_points"]
         M = config["trading"]["M"]
+        trade_mode = config["trading"]["trade_mode"]
         counter_trade_enabled = config["trading"]["counter_trade_enabled"]
 
         for symbol in symbols:
@@ -272,7 +285,7 @@ if __name__ == "__main__":
 
             magic = magic_counter
             magic_counter += 1
-            if candle_data['close'] > candle_data['open']:
+            if candle_data['close'] > candle_data['open'] and trade_mode in ["buy_only", "both"]:
                 trade_type = mt5.ORDER_TYPE_BUY
                 result = open_trade(symbol, trade_type, volume, D_tp, D_sl, magic)
                 if result is None:  # Check if trade failed
@@ -283,7 +296,7 @@ if __name__ == "__main__":
                     counter_tp = counter_price - D_tp_counter
                     sl_counter = price + sl_counter
                     place_pending_order(symbol, mt5.ORDER_TYPE_SELL_STOP, volume * M, counter_price, counter_tp,sl_counter, magic)
-            elif candle_data['close'] < candle_data['open']:
+            elif candle_data['close'] < candle_data['open'] and trade_mode in ["sell_only", "both"]:
                 trade_type = mt5.ORDER_TYPE_SELL
                 price = tick.bid
                 result = open_trade(symbol, trade_type, volume, D_tp, D_sl, magic)
@@ -295,4 +308,4 @@ if __name__ == "__main__":
                     sl_counter = price - sl_counter
                     place_pending_order(symbol, mt5.ORDER_TYPE_BUY_STOP, volume * M, counter_price, counter_tp,sl_counter, magic)
             else:
-                print(f"[{symbol}] Candle has no direction (close == open), skipping trade")
+                print(f"[{symbol}] Candle has no direction (close == open), skipping trade or doesn't match trade mode")

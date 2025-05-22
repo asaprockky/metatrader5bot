@@ -68,7 +68,6 @@ def show_status(message):
 *General:*
 🤖 Bot: {'✅ Enabled' if config['telegram']['bot_enabled'] else '❌ Disabled'}
 🔁 Counter Trade: {'✅ On' if trading['counter_trade_enabled'] else '❌ Off'}
-⏱ Timeframe: {escape_markdown(str(trading['timeframe']))}
 🕯 Min Candle Size: {escape_markdown(str(trading['min_candle_size_points']))} points
 📏 M: {escape_markdown(str(trading['M']))}
 🕒 Trading Hours: {escape_markdown(str(trading['start_time']))} - {escape_markdown(str(trading['end_time']))}
@@ -77,14 +76,15 @@ def show_status(message):
 *Symbols ({len(trading['symbols'])}):*
 """
     for sym in trading["symbols"]:
-        s = trading["settings"][sym]
+        # Use defaults if symbol settings don't exist
+        s = trading.get(sym, {})
         status_msg += f"""
 🔸 *{escape_markdown(sym)}*
-- Volume: {escape_markdown(str(s['volume']))}
-- TP/SL: {escape_markdown(str(s['tp']))}/{escape_markdown(str(s['sl']))}
-- Counter: {escape_markdown(str(s['counter']))}
-- TP Counter: {escape_markdown(str(s['tp_counter']))}
-- SL Counter: {escape_markdown(str(s['sl_counter']))}
+- Volume: {escape_markdown(str(s.get('volume', trading['volume'])))}
+- TP/SL: {escape_markdown(str(s.get('tp', trading['D_tp'])))}/{escape_markdown(str(s.get('sl', trading['D_sl'])))}
+- Counter: {escape_markdown(str(s.get('counter', trading['D_counter'])))}
+- TP Counter: {escape_markdown(str(s.get('tp_counter', trading['D_tp_counter'])))}
+- SL Counter: {escape_markdown(str(s.get('sl_counter', trading['D_sl_counter'])))}
 """
     bot.send_message(message.chat.id, status_msg, parse_mode="Markdown")
 
@@ -169,13 +169,13 @@ def process_symbol_sl(message):
             bot.send_message(message.chat.id, "❌ Symbol already exists!", reply_markup=main_menu)
             return
         config["trading"]["symbols"].append(symbol)
-        config["trading"]["settings"][symbol] = {
+        config["trading"][symbol] = {
             "volume": state["volume"],
             "tp": state["tp"],
             "sl": sl,
-            "counter": 5.0,
-            "tp_counter": 0.01,
-            "sl_counter": 600.0
+            "counter": config["trading"]["D_counter"],
+            "tp_counter": config["trading"]["D_tp_counter"],
+            "sl_counter": config["trading"]["D_sl_counter"]
         }
         update_config(config)
         bot.send_message(message.chat.id, "✅ Symbol added successfully", reply_markup=main_menu)
@@ -224,7 +224,8 @@ def handle_remove_confirmation(call):
         symbol = call.data.split("_")[1]
         if symbol in config["trading"]["symbols"]:
             config["trading"]["symbols"].remove(symbol)
-            del config["trading"]["settings"][symbol]
+            if symbol in config["trading"]:
+                del config["trading"][symbol]
             update_config(config)
             bot.answer_callback_query(call.id, f"{symbol} removed")
             bot.edit_message_text(f"{symbol} has been removed", call.message.chat.id, call.message.message_id, reply_markup=None)
@@ -290,7 +291,17 @@ def save_parameter_change(message):
             raise ValueError("Value must be positive")
         state = user_states[message.chat.id]
         config = json.load(open('config.json'))
-        config["trading"]["settings"][state["symbol"]][state["param"]] = value
+        # Ensure the symbol has a settings dictionary
+        if state["symbol"] not in config["trading"]:
+            config["trading"][state["symbol"]] = {
+                "volume": config["trading"]["volume"],
+                "tp": config["trading"]["D_tp"],
+                "sl": config["trading"]["D_sl"],
+                "counter": config["trading"]["D_counter"],
+                "tp_counter": config["trading"]["D_tp_counter"],
+                "sl_counter": config["trading"]["D_sl_counter"]
+            }
+        config["trading"][state["symbol"]][state["param"]] = value
         update_config(config)
         bot.send_message(message.chat.id, "✅ Parameter updated successfully", reply_markup=main_menu)
     except ValueError as e:
@@ -304,7 +315,6 @@ def trading_settings_menu(message):
     trading = config["trading"]
     settings_msg = f"""🔧 *Trading Settings*
 
-⏱ Timeframe: {escape_markdown(str(trading['timeframe']))}
 🕯 Min Candle Size: {escape_markdown(str(trading['min_candle_size_points']))} points
 📏 M: {escape_markdown(str(trading['M']))}
 🕒 Start Time: {escape_markdown(str(trading['start_time']))}
@@ -313,7 +323,6 @@ def trading_settings_menu(message):
 """
     keyboard = types.InlineKeyboardMarkup()
     keyboard.add(
-        types.InlineKeyboardButton("⏱ Edit Timeframe", callback_data="edit_trading_param_timeframe"),
         types.InlineKeyboardButton("🕯 Edit Min Candle Size", callback_data="edit_trading_param_min_candle_size_points")
     )
     keyboard.add(
@@ -330,7 +339,6 @@ def trading_settings_menu(message):
 def start_edit_trading_param(call):
     param = call.data.replace("edit_trading_param_", "", 1)
     prompt = {
-        "timeframe": "⏱ Enter new timeframe (e.g., M1, M5, H1):",
         "min_candle_size_points": "🕯 Enter new min candle size (positive integer):",
         "M": "📏 Enter new M value (positive float):",
         "start_time": "🕒 Enter new start time (HH:MM):",
@@ -352,12 +360,7 @@ def process_new_trading_param(message):
     param = state["param"]
     new_value = message.text
     try:
-        if param == "timeframe":
-            valid = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4']
-            new_value = new_value.upper()
-            if new_value not in valid:
-                raise ValueError(f"Invalid timeframe! Valid options: {', '.join(valid)}")
-        elif param == "min_candle_size_points":
+        if param == "min_candle_size_points":
             new_value = int(new_value)
             if new_value <= 0:
                 raise ValueError("Must be a positive integer")

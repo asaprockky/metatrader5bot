@@ -1,31 +1,28 @@
 {
   "telegram": {
-    "token": "7043187972:AAHJUHs1ghN8HYpPglHOrYEws_6cDKMWApI",
+    "bot_enabled": true,
+    "token": "7617476622:AAHIDJZApi4nEaGEIE_1STj2OcxlYd62yns",
     "allowed_user_ids": [
       6159258189,
       1322755444
-    ],
-    "bot_enabled": true
+    ]
   },
   "trading": {
-    "timeframe": "M1",
-    "symbols": [
-      "XAUUSD"
-    ],
-    "min_candle_size_points": 10,
+    "symbols": ["XAUUSDm"],
+    "min_candle_size_points": 50,
     "M": 5.0,
+    "trade_mode" : "buy_only",
+    "start_time": "01:00",
+    "end_time": "23:00",
     "counter_trade_enabled": true,
-    "start_time": "00:00",
-    "end_time": "23:59",
-    "trade_mode": "both",
     "settings": {
-      "XAUUSD": {
-        "volume": 0.05,
-        "tp": 1.0,
-        "sl": 6.898,
-        "counter": 5.0,
-        "tp_counter": 1.786,
-        "sl_counter": 1000.0
+      "XAUUSDm": {
+        "volume": 0.1,
+        "tp": 100.0,
+        "sl": 500.0,
+        "counter": 200.0,
+        "tp_counter": 180.0,
+        "sl_counter": 615.0
       }
     }
   }
