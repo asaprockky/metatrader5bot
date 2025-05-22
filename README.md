@@ -2,10 +2,10 @@
 
 # MT5 Trading Bot
 
-A Python-based automated trading bot for MetaTrader 5 (MT5), designed to execute trades based on 15-minute (M15) candlestick analysis. This bot is configurable via a JSON file, allowing customization of trading hours, volume, take-profit, stop-loss, and counter-trade strategies. It is optimized for the Exness MT5 platform and includes robust connection handling and error recovery.
+A Python-based automated trading bot for MetaTrader 5 (MT5), designed to execute trades based on candlestick analysis. The timeframe for the candlestick analysis is configurable via the `config.json` file. This bot is configurable via a JSON file, allowing customization of trading hours, volume, take-profit, stop-loss, and counter-trade strategies. It is optimized for the Exness MT5 platform and includes robust connection handling and error recovery.
 
 ## Features
-- **M15 Candlestick Analysis**: Executes trades based on the direction and size of the previous 15-minute candle.
+- **Configurable Candlestick Analysis**: Executes trades based on the direction and size of the previous candle, with the timeframe configurable in `config.json`.
 - **Customizable Settings**: Supports configurable trading parameters (volume, TP, SL, counter trades) per symbol via `config.json`.
 - **Trading Hours**: Operates within a specified time window (e.g., 01:00 to 23:00 local +05 time, adjusted to UTC).
 - **Counter Trades**: Places pending counter orders (e.g., SELL_STOP or BUY_STOP) when enabled.
@@ -30,10 +30,11 @@ pip install MetaTrader5 filelock
    ```
 
 2. **Configure MT5**:
-   - Ensure the MT5 terminal (e.g., `terminal64.exe`) is installed at the path specified in the code (`C:\Users\Administrator\Desktop\candle\MetaTrader 5 EXNESS\terminal64.exe`).
-   - Update the `terminal_path` variable in the script if your path differs.
+   - Ensure the MT5 terminal (e.g., `terminal64.exe`) is installed. The script uses the path `C:\Users\Administrator\Desktop\candle\MetaTrader 5 EXNESS\terminal64.exe`.
+   - Update the `terminal_path` variable in the `mt.py` script if your path differs.
 
 3. **Edit `config.json`**:
+   - This is the sole configuration file for the bot.
    - Modify the file with your MT5 account details, trading preferences, and Telegram settings (if used).
    - Example `config.json`:
      ```json
@@ -74,37 +75,37 @@ pip install MetaTrader5 filelock
      password = "password"
      server = "yourserver"
      ```
+   These credentials should be updated directly in the `mt.py` script.
 
 5. **Run the Bot**:
    ```bash
-   python mt5_trading_bot.py
+   python mt.py
    ```
 
 ## How It Works
-- The bot initializes an MT5 connection and logs into your account.
-- It waits for the next 15-minute interval (e.g., 07:45 PM +05, or 14:45 UTC on May 20, 2025) to process the previous M15 candle.
-- For each symbol (e.g., XAUUSD), it:
-  - Fetches the previous 15-minute candle.
-  - Checks if the candle size exceeds the minimum threshold (10 points).
+- The `mt.py` script initializes an MT5 connection and logs into your account using the credentials specified in the script.
+- It waits for the next interval based on the `timeframe` setting in `config.json` (e.g., if timeframe is M15, it waits for the next 15-minute interval like 07:45 PM +05, or 14:45 UTC on May 20, 2025) to process the previous candle.
+- For each symbol specified in `config.json` (e.g., XAUUSD), it:
+  - Fetches the previous candle based on the configured `timeframe`.
+  - Checks if the candle size exceeds the `min_candle_size_points` threshold from `config.json`.
   - Opens a BUY trade if the candle is bullish, or a SELL trade if bearish, within the configured trading hours.
   - Places a pending counter trade (e.g., SELL_STOP for BUY) if enabled.
-- Trades include take-profit (TP) and stop-loss (SL) settings, with magic numbers for tracking.
+- Trades include take-profit (TP) and stop-loss (SL) settings from `config.json`, with magic numbers for tracking.
 
 ## Current Status
-- **Date and Time**: 07:46 PM +05, Tuesday, May 20, 2025 (14:46 UTC).
-- The bot is currently within the trading window (01:00 to 23:00 local +05, or 20:00 UTC previous day to 18:00 UTC same day), assuming the timezone adjustment is applied.
-- Next execution is expected at 08:00 PM +05 (15:00 UTC) for the candle ending at 07:59:59 PM +05.
+- **Date and Time**: 07:46 PM +05, Tuesday, May 20, 2025 (14:46 UTC). (This is an example, the bot uses the current system time)
+- The bot operates based on the `start_time` and `end_time` specified in `config.json`, interpreted as local +05 time and converted to UTC internally.
+- Next execution depends on the `timeframe` in `config.json`. For example, if M15, and current time is 07:46 PM +05, next execution is expected at 08:00 PM +05 (15:00 UTC) for the candle ending at 07:59:59 PM +05.
 
 ## Limitations
-- The trading hours logic assumes UTC; adjust the code for local +05 timezone support if needed (see code comments).
-- Supports only one symbol (XAUUSD) by default; extend `symbols` in `config.json` for more.
+- The trading hours logic assumes UTC for internal calculations; ensure `start_time` and `end_time` in `config.json` are set according to your local +05 timezone.
+- The script supports symbols listed in the `symbols` array in `config.json`.
 
 ## Contributing
-Feel free to fork this repository, submit issues, or send pull requests to enhance functionality (e.g., add more timeframes, symbols, or error handling).
+Feel free to fork this repository, submit issues, or send pull requests to enhance functionality.
 
 ---
 
 ### Notes
-- The README assumes the timezone adjustment for +05 local time is implemented as suggested in the previous response. If not yet applied, update the trading hours logic in the code.
 - Replace `yourusername`, `your_telegram_token`, and the license placeholder with your details.
-- The current time (07:46 PM +05) is used to provide a real-time context for the bot's operation.
+- Ensure your MT5 account credentials in `mt.py` are correct and that `config.json` is properly configured.

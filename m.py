@@ -1,1 +1,0 @@
-div_by = [n for n in range(0, 51) if i%5 == 0 n.append(i)]
