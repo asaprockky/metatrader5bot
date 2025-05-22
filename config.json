@@ -5,7 +5,7 @@
       6159258189,
       1322755444
     ],
-    "bot_enabled": false
+    "bot_enabled": true
   },
   "trading": {
     "symbols": [
@@ -16,7 +16,7 @@
     "counter_trade_enabled": true,
     "start_time": "00:00",
     "end_time": "10:00",
-    "trade_mode": "both",
+    "trade_mode": "sell_only",
     "volume": 0.05,
     "D_tp": 1.0,
     "D_sl": 1000.0,

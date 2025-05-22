@@ -31,7 +31,7 @@ def create_keyboard(items, columns=2):
         keyboard.row(*items[i:i+columns])
     return keyboard
 
-# Helper function for file operations (no locking for Windows)
+# Helper function for file operations
 def update_config(new_config):
     with open('config.json', 'w') as f:
         json.dump(new_config, f, indent=2)
@@ -76,12 +76,11 @@ def show_status(message):
 *Symbols ({len(trading['symbols'])}):*
 """
     for sym in trading["symbols"]:
-        # Use defaults if symbol settings don't exist
         s = trading.get(sym, {})
         status_msg += f"""
 🔸 *{escape_markdown(sym)}*
 - Volume: {escape_markdown(str(s.get('volume', trading['volume'])))}
-- TP/SL: {escape_markdown(str(s.get('tp', trading['D_tp'])))}/{escape_markdown(str(s.get('sl', trading['D_sl'])))}
+- TP/SL: {escape_markdown(str(s.get('tp', trading['D_tp'])))}.{escape_markdown(str(s.get('sl', trading['D_sl'])))}
 - Counter: {escape_markdown(str(s.get('counter', trading['D_counter'])))}
 - TP Counter: {escape_markdown(str(s.get('tp_counter', trading['D_tp_counter'])))}
 - SL Counter: {escape_markdown(str(s.get('sl_counter', trading['D_sl_counter'])))}
@@ -127,7 +126,7 @@ def start_add_symbol(message):
 def process_symbol_name(message):
     if not re.match(r'^[A-Z0-9]+$', message.text.upper()):
         bot.send_message(message.chat.id, "❌ Invalid symbol! Use uppercase letters and numbers (e.g., EURUSD)")
-        bot.register_next_step_handler(message, process_symbol_name)  # Retry
+        bot.register_next_step_handler(message, process_symbol_name)
         return
     user_states[message.chat.id] = {"action": "add", "symbol": message.text.upper()}
     msg = bot.send_message(message.chat.id, "💹 Enter trade volume:")
@@ -143,7 +142,7 @@ def process_symbol_volume(message):
         bot.register_next_step_handler(msg, process_symbol_tp)
     except ValueError as e:
         bot.send_message(message.chat.id, f"❌ Invalid volume: {str(e)}. Please enter a valid number:")
-        bot.register_next_step_handler(message, process_symbol_volume)  # Retry
+        bot.register_next_step_handler(message, process_symbol_volume)
 
 def process_symbol_tp(message):
     try:
@@ -155,7 +154,7 @@ def process_symbol_tp(message):
         bot.register_next_step_handler(msg, process_symbol_sl)
     except ValueError as e:
         bot.send_message(message.chat.id, f"❌ Invalid Take Profit: {str(e)}. Please enter a valid number:")
-        bot.register_next_step_handler(message, process_symbol_tp)  # Retry
+        bot.register_next_step_handler(message, process_symbol_tp)
 
 def process_symbol_sl(message):
     try:
@@ -180,8 +179,8 @@ def process_symbol_sl(message):
         update_config(config)
         bot.send_message(message.chat.id, "✅ Symbol added successfully", reply_markup=main_menu)
     except ValueError as e:
-        bot.send_message(message.chat.id, f"❌ Invalid Stop Loss: {str(e)}. Please enter a valid number:")
-        bot.register_next_step_handler(message, process_symbol_sl)  # Retry
+        bot.send_message(message.chat.id, f"❌ scrolled Stop Loss: {str(e)}. Please enter a valid number:")
+        bot.register_next_step_handler(message, process_symbol_sl)
 
 @bot.message_handler(func=lambda msg: msg.text == "🗑 Remove Symbol")
 @authorized
@@ -291,7 +290,6 @@ def save_parameter_change(message):
             raise ValueError("Value must be positive")
         state = user_states[message.chat.id]
         config = json.load(open('config.json'))
-        # Ensure the symbol has a settings dictionary
         if state["symbol"] not in config["trading"]:
             config["trading"][state["symbol"]] = {
                 "volume": config["trading"]["volume"],
@@ -306,7 +304,7 @@ def save_parameter_change(message):
         bot.send_message(message.chat.id, "✅ Parameter updated successfully", reply_markup=main_menu)
     except ValueError as e:
         bot.send_message(message.chat.id, f"❌ Invalid value: {str(e)}. Please enter a valid number:")
-        bot.register_next_step_handler(message, save_parameter_change)  # Retry
+        bot.register_next_step_handler(message, save_parameter_change)
 
 @bot.message_handler(func=lambda msg: msg.text == "🔧 Trading Settings")
 @authorized
@@ -371,7 +369,6 @@ def process_new_trading_param(message):
         elif param in ["start_time", "end_time"]:
             time_obj = datetime.strptime(new_value, "%H:%M")
             new_value = time_obj.strftime("%H:%M")
-            # Validate start_time < end_time
             config = json.load(open('config.json'))
             if param == "start_time":
                 end_time = datetime.strptime(config["trading"]["end_time"], "%H:%M")
@@ -393,7 +390,7 @@ def process_new_trading_param(message):
         del user_states[message.chat.id]
     except ValueError as e:
         bot.send_message(message.chat.id, f"❌ {str(e)}")
-        bot.register_next_step_handler(message, process_new_trading_param)  # Retry
+        bot.register_next_step_handler(message, process_new_trading_param)
     except Exception as e:
         bot.send_message(message.chat.id, f"❌ Error: {str(e)}", reply_markup=main_menu)
 
@@ -417,4 +414,4 @@ def handle_unknown(message):
     bot.send_message(message.chat.id, "❓ Unrecognized command. Please use the menu:", reply_markup=main_menu)
 
 print("✅ Bot is running...")
-bot.polling()
+bot.polling(non_stop=True)
